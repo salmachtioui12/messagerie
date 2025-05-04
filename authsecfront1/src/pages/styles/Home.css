@@ -1,0 +1,15 @@
+.home-container {
+    flex: 1; /* ← TRÈS important */
+    display: flex;
+    flex-direction: column;
+    padding-top: 20px;
+    padding-left: 20px;
+  }
+  
+  
+  .offers-header {
+    font-weight: bold;
+    color: gray;
+    margin-bottom: 15px;
+  }
+  
