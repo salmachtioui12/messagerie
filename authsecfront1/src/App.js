@@ -14,7 +14,7 @@ import StudentProfileCreate from "./pages/StudentProfileCreate";
 import StudentProfileEdit from "./pages/StudentProfileEdit";
 import StudentProfileView from "./pages/StudentProfileView";
 import axios from 'axios';
-import Chat from './components/messagerie/chat';
+
 import SearchProfiles from './components/SearchProfiles';
 import NvprofileStudent from './components/NvprofileStudent';
 import NvprofileCompany from './components/NvprofileCompany';

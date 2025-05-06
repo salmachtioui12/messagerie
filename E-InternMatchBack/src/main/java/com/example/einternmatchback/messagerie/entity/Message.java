@@ -24,4 +24,7 @@ public class Message {
 
     @Column(name = "is_read")
     private boolean read = false;
+    private boolean edited = false;
+    private boolean completelyDeleted=false;
+
 }

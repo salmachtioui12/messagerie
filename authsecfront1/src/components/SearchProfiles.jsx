@@ -60,12 +60,14 @@ const SearchProfiles = () => {
     <div className="w-full max-w-md mx-auto mt-4">
       {/* Barre de recherche */}
       <input
-        type="text"
-        className="w-full px-3 py-1 border border-gray-300 rounded-full text-sm focus:outline-none focus:ring focus:border-blue-500"
-        placeholder="Rechercher un profil..."
-        value={keyword}
-        onChange={(e) => setKeyword(e.target.value)}
-      />
+  type="text"
+  className="w-full max-w-xs px-2 py-1 border border-gray-300 rounded-full text-xs focus:outline-none focus:ring focus:border-blue-500"
+  placeholder="Rechercher un profil..."
+  style={{ width: "500px", height: "20px",  borderRadius: "20px",}}
+  value={keyword}
+  onChange={(e) => setKeyword(e.target.value)}
+/>
+
 
       {/* Résultats */}
       {results.length > 0 && (
@@ -76,13 +78,7 @@ const SearchProfiles = () => {
               className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-gray-50 text-sm cursor-pointer"
               onClick={() => handleProfileClick(user.userId, user.role)} // Passer le role ici
             >
-              {/* Image à gauche */}
-              <img
-                src={images[user.userId] || DEFAULT_PROFILE_PICTURE}
-                alt="Profile"
-                className="rounded-full object-cover"
-                style={{ width: "40px", height: "40px", borderRadius: "50%", objectFit: "cover" }}
-              />
+             
 
               {/* Prénom + Nom avec taille augmentée */}
               <span className="font-medium text-base truncate">
@@ -91,6 +87,13 @@ const SearchProfiles = () => {
 
               {/* Rôle aligné à droite */}
               <span className="text-gray-500 text-xs ml-auto">{user.role}</span>
+               {/* Image à gauche */}
+               <img
+                src={images[user.userId] || DEFAULT_PROFILE_PICTURE}
+                alt="Profile"
+                className="rounded-full object-cover"
+                style={{ width: "40px", height: "40px", borderRadius: "50%", objectFit: "cover" }}
+              />
             </li>
           ))}
         </ul>

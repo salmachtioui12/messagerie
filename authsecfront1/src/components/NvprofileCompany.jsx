@@ -6,7 +6,7 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:1217/api
 const DEFAULT_LOGO = "https://cdn-icons-png.flaticon.com/512/847/847969.png";
 
 const NvprofileCompany = () => {
-  const { userId } = useParams();
+  const { userId } = useParams(); // userId dans l'URL
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -15,10 +15,21 @@ const NvprofileCompany = () => {
   const [error, setError] = useState("");
   const [logoUrl, setLogoUrl] = useState(DEFAULT_LOGO);
 
+  // ✅ Récupère userId depuis localStorage
+  const getCurrentUserId = () => {
+    return localStorage.getItem("userId"); // Assure que userId est bien stocké comme "5" ou autre
+  };
+
+  const currentUserId = getCurrentUserId();
   const queryParams = new URLSearchParams(location.search);
   const role = queryParams.get("role") || "manager";
 
-  // Fonction pour récupérer le token et vérifier l'authentification
+  // ✅ Affiche les deux IDs pour debug
+  useEffect(() => {
+    console.log("✅ userId dans l'URL        :", userId);
+    console.log("✅ userId de l'utilisateur :", currentUserId);
+  }, [userId, currentUserId]);
+
   const getAuthToken = () => {
     const token = localStorage.getItem("accessToken");
     if (!token) {
@@ -82,9 +93,7 @@ const NvprofileCompany = () => {
   if (!company) return <div>Aucune entreprise trouvée.</div>;
 
   const handleGoToChat = () => {
-    // Redirige l'utilisateur vers la page de messagerie
     navigate(`/ChatPage?receiverId=${userId}&role=MANAGER`);
-
   };
 
   return (
@@ -134,22 +143,25 @@ const NvprofileCompany = () => {
               <p>{company.description}</p>
             </div>
           )}
-          {/* Petit bouton pour rediriger vers la page de messagerie */}
-          <button 
-            style={{ 
-              backgroundColor: "#007BFF", 
-              color: "#fff", 
-              border: "none", 
-              padding: "10px 15px", 
-              borderRadius: "5px", 
-              cursor: "pointer",
-              fontSize: "14px",
-              marginTop: "20px"
-            }} 
-            onClick={handleGoToChat}
-          >
-            Envoyer un message
-          </button>
+
+          {/* ✅ N'affiche PAS le bouton si on consulte son propre profil */}
+          {String(currentUserId) !== String(userId) && (
+            <button
+              style={{
+                backgroundColor: "#007BFF",
+                color: "#fff",
+                border: "none",
+                padding: "10px 15px",
+                borderRadius: "5px",
+                cursor: "pointer",
+                fontSize: "14px",
+                marginTop: "20px",
+              }}
+              onClick={handleGoToChat}
+            >
+              Envoyer un message
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -41,7 +41,12 @@ public class ChatController {
         message.setRead(false);
 
         Message saved = messageRepository.save(message);
+        // 1. Envoi du message normal
         messagingTemplate.convertAndSend("/topic/messages/" + receiverId, saved);
+
+
+
+;
     }
 
 }
