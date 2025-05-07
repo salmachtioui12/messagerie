@@ -25,10 +25,24 @@ const ChatPage = () => {
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editContent, setEditContent] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedMessageId, setSelectedMessageId] = useState(null);
 
   const token = localStorage.getItem("accessToken");
   const stompClientRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setSelectedMessageId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const formatDate = (dateString) => {
     try {
@@ -54,6 +68,8 @@ const ChatPage = () => {
   }, [token, navigate]);
 
   const fetchMessages = useCallback(async () => {
+    if (!userId || !receiverId) return;
+    
     try {
       const res = await axios.get(
         `http://localhost:1217/api/messages/conversation?user1=${userId}&user2=${receiverId}`,
@@ -71,6 +87,8 @@ const ChatPage = () => {
   }, [userId, receiverId, token]);
 
   const fetchReceiverInfo = useCallback(async () => {
+    if (!receiverId) return;
+    
     try {
       const res = await axios.get(
         `http://localhost:1217/api/search/profile/${receiverId}?role=${receiverRole}`,
@@ -140,6 +158,8 @@ const ChatPage = () => {
   }, [token]);
 
   const fetchConversations = useCallback(async () => {
+    if (!userId) return;
+    
     try {
       setLoadingConversations(true);
       const res = await axios.get(
@@ -173,7 +193,6 @@ const ChatPage = () => {
       );
 
       if (existingConvIndex >= 0) {
-        // Mettre à jour la conversation existante
         const updatedConversations = prev.map(conv => {
           if (conv.userId === otherUserId) {
             const isUnreadUpdate = updatedMessage.receiverId === userId && !updatedMessage.read;
@@ -189,14 +208,12 @@ const ChatPage = () => {
           return conv;
         });
 
-        // Trier les conversations après mise à jour
         return updatedConversations.sort((a, b) => {
           const dateA = new Date(a.timestamp);
           const dateB = new Date(b.timestamp);
           return dateB - dateA;
         });
       } else {
-        // Créer une nouvelle conversation
         const newConv = {
           userId: otherUserId,
           role: updatedMessage.senderId === userId ? receiverRole : "STUDENT",
@@ -208,7 +225,6 @@ const ChatPage = () => {
           read: updatedMessage.senderId === userId
         };
 
-        // Ajouter la nouvelle conversation et trier
         const updatedConversations = [...prev, newConv].sort((a, b) => {
           const dateA = new Date(a.timestamp);
           const dateB = new Date(b.timestamp);
@@ -316,7 +332,6 @@ const ChatPage = () => {
       setMessages((prev) => [...prev, message]);
       setNewMessage("");
       
-      // Mettre à jour les conversations avec les dernières infos
       const conversationUpdate = {
         ...message,
         firstname: receiverInfo?.firstname || "Nouvel utilisateur",
@@ -390,67 +405,81 @@ const ChatPage = () => {
     }
   };
 
+  const handleMessageClick = (messageId, event) => {
+    event.stopPropagation();
+    setSelectedMessageId(selectedMessageId === messageId ? null : messageId);
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.sidebar}>
         <div style={styles.sidebarHeader}>
-          <h3 style={styles.sidebarTitle}>Conversations</h3>
-          {loadingConversations && <div style={styles.loadingIndicator}>Actualisation...</div>}
+          <h3 style={styles.sidebarTitle}>Messages</h3>
+          {loadingConversations && <div style={styles.loadingIndicator}>Chargement...</div>}
         </div>
-        {conversations.map((conv) => {
-          const convDate = formatDate(conv.timestamp);
-          return (
-            <div
-              key={conv.userId}
-              onClick={() => navigate(`/ChatPage?receiverId=${conv.userId}&role=${conv.role}`)}
-              style={{
-                ...styles.conversationItem,
-                backgroundColor: parseInt(receiverId) === conv.userId ? "#e3f2fd" : "transparent",
-              }}
-            >
-              <img
-                src={conversationImages[conv.userId] || DEFAULT_PROFILE_PICTURE}
-                alt="img"
-                style={styles.conversationAvatar}
-              />
-              <div style={styles.conversationContent}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <strong style={styles.conversationName}>
-                    {conv.firstname} {conv.lastname}
-                  </strong>
-                  {conv.unreadCount > 0 && (
-                    <span style={styles.unreadBadge}>
-                      {conv.unreadCount}
+        <div style={styles.conversationList}>
+          {conversations.map((conv) => {
+            const isActive = parseInt(receiverId) === conv.userId;
+            const hasUnread = conv.unreadCount > 0;
+            const conversationTime = formatDisplayTime(new Date(conv.timestamp));
+            
+            return (
+              <div
+                key={conv.userId}
+                onClick={() => navigate(`/ChatPage?receiverId=${conv.userId}&role=${conv.role}`)}
+                style={{
+                  ...styles.conversationItem,
+                  backgroundColor: isActive 
+                    ? "#e3f2fd"
+                    : hasUnread 
+                      ? "#f5f5f5"
+                      : "#ffffff",
+                }}
+              >
+                <img
+                  src={conversationImages[conv.userId] || DEFAULT_PROFILE_PICTURE}
+                  alt="Profile"
+                  style={styles.conversationAvatar}
+                />
+                <div style={styles.conversationContent}>
+                  <div style={styles.conversationHeader}>
+                    <strong style={{
+                      ...styles.conversationName,
+                      fontWeight: hasUnread ? "600" : "500",
+                      color: hasUnread ? "#000000" : "#333333"
+                    }}>
+                      {conv.firstname} {conv.lastname}
+                    </strong>
+                    <span style={styles.conversationTime}>
+                      {conversationTime}
                     </span>
-                  )}
-                </div>
-                <div style={{
-                  ...styles.conversationLastMessage,
-                  color: conv.read ? "#757575" : "#212121",
-                  fontWeight: conv.read ? "normal" : "500",
-                }}>
-                  {conv.lastMessage?.slice(0, 20)}...
-                </div>
-                <div style={styles.conversationTime}>
-                  {convDate ? formatDisplayDate(convDate) + " " + formatDisplayTime(convDate) : ""}
+                  </div>
+                  <div style={styles.conversationPreview}>
+                    <p style={{
+                      ...styles.conversationLastMessage,
+                      fontWeight: hasUnread ? "500" : "400"
+                    }}>
+                      {conv.lastMessage?.length > 25 
+                        ? `${conv.lastMessage.substring(0, 25)}...` 
+                        : conv.lastMessage}
+                    </p>
+                    {hasUnread && (
+                      <span style={styles.unreadBadge}>
+                        {conv.unreadCount}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       <div style={styles.chatArea}>
         {receiverInfo && (
-          <div style={styles.chatHeader}>
-            <img
-              src={receiverImage}
-              alt="Profil"
-              style={styles.chatAvatar}
-            />
-            <h3 style={styles.chatTitle}>
-              {receiverInfo.firstname} {receiverInfo.lastname}
-            </h3>
+          <div >
+          
           </div>
         )}
 
@@ -488,101 +517,80 @@ const ChatPage = () => {
                           type="text"
                           value={editContent}
                           onChange={(e) => setEditContent(e.target.value)}
-                          style={{ 
-                            padding: '8px',
-                            borderRadius: '6px',
-                            border: '1px solid #ccc',
-                            width: '100%'
-                          }}
+                          style={styles.editInput}
                           disabled={isProcessing}
                         />
-                        <div style={{ display: 'flex', gap: '5px', justifyContent: 'flex-end' }}>
+                        <div style={styles.editButtons}>
                           <button 
                             onClick={handleEditMessage}
                             disabled={isProcessing}
-                            style={{ 
-                              padding: '5px 10px',
-                              backgroundColor: '#4CAF50',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px'
-                            }}
+                            style={styles.saveEditButton}
                           >
-                            {isProcessing ? "En cours..." : "Valider"}
+                            {isProcessing ? "En cours..." : "✓"}
                           </button>
                           <button 
                             onClick={cancelEditing}
                             disabled={isProcessing}
-                            style={{ 
-                              padding: '5px 10px',
-                              backgroundColor: '#f44336',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px'
-                            }}
+                            style={styles.cancelEditButton}
                           >
-                            Annuler
+                            X
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <div style={{
-                        ...styles.messageBubble,
-                        backgroundColor: msg.senderId === userId ? "#dcf8c6" : "#ffffff",
-                      }}>
-                        <div style={styles.messageText}>{msg.content}</div>
-                        <div style={styles.messageFooter}>
-                          {displayTime && <span style={styles.messageTime}>{displayTime}</span>}
-                          {msg.senderId === userId && (
-                            <>
-                              <span style={{
-                                ...styles.messageStatus,
-                                color: msg.read ? "#4fc3f7" : "#aaa",
-                              }}>
-                                {msg.read ? "✓✓" : "✓"}
-                              </span>
-                              {msg.edited && (
-                                <span style={{ fontSize: '10px', color: '#666', marginLeft: '5px' }}>
-                                  (modifié)
+                      <div 
+                        onClick={(e) => msg.senderId === userId && handleMessageClick(msg.id, e)}
+                        style={{
+                          ...styles.messageBubble,
+                          backgroundColor: msg.senderId === userId ? "#dcf8c6" : "#ffffff",
+                          position: "relative"
+                        }}
+                      >
+                        <div style={styles.messageContent}>
+                          <div style={styles.messageText}>{msg.content}</div>
+                          <div style={styles.messageMeta}>
+                            {displayTime && <span style={styles.messageTime}>{displayTime}</span>}
+                            {msg.senderId === userId && (
+                              <>
+                                <span style={{
+                                  ...styles.messageStatus,
+                                  color: msg.read ? "#53bdeb" : "#999999",
+                                }}>
+                                  {msg.read ? "✓✓" : "✓"}
                                 </span>
-                              )}
-                            </>
-                          )}
+                                {msg.edited && (
+                                  <span style={styles.editedLabel}>
+                                    (modifié)
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
-                        {msg.senderId === userId && (
-                          <div style={{ 
-                            display: 'flex', 
-                            gap: '5px', 
-                            marginTop: '5px', 
-                            justifyContent: 'flex-end' 
-                          }}>
+
+                        {msg.senderId === userId && selectedMessageId === msg.id && (
+                          <div ref={menuRef} style={styles.messageMenu}>
                             <button
-                              onClick={() => startEditing(msg)}
-                              disabled={isProcessing}
-                              style={{ 
-                                fontSize: '12px', 
-                                padding: '2px 5px',
-                                backgroundColor: '#2196F3',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px'
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEditing(msg);
+                                setSelectedMessageId(null);
                               }}
+                              disabled={isProcessing}
+                              style={styles.menuItem}
                             >
-                              Modifier
+                              <span style={styles.menuIcon}>✏️</span> Modifier
                             </button>
                             <button
-                              onClick={() => handleDeleteMessage(msg.id)}
-                              disabled={isProcessing}
-                              style={{ 
-                                fontSize: '12px', 
-                                padding: '2px 5px',
-                                backgroundColor: '#f44336',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px'
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteMessage(msg.id);
+                                setSelectedMessageId(null);
                               }}
+                              disabled={isProcessing}
+                              style={{ ...styles.menuItem, color: "#f44336" }}
                             >
-                              Supprimer
+                              <span style={styles.menuIcon}>🗑️</span> Supprimer
                             </button>
                           </div>
                         )}
@@ -595,24 +603,31 @@ const ChatPage = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        <div style={styles.messageInputContainer}>
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder="Écrivez un message..."
-            style={styles.messageInput}
-            disabled={isProcessing}
-          />
-          <button
-            onClick={handleSendMessage}
-            style={styles.sendButton}
-            disabled={isProcessing || !newMessage.trim()}
-          >
-            Envoyer
-          </button>
-        </div>
+        {/* Afficher seulement si receiverId et role sont présents */}
+        {receiverId && rawRole ? (
+          <div style={styles.messageInputContainer}>
+            <input
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              placeholder="Écrivez un message..."
+              style={styles.messageInput}
+              disabled={isProcessing}
+            />
+            <button
+              onClick={handleSendMessage}
+              style={styles.sendButton}
+              disabled={isProcessing || !newMessage.trim()}
+            >
+              Envoyer
+            </button>
+          </div>
+        ) : (
+          <div style={styles.noRecipientMessage}>
+            <p>Sélectionnez une conversation pour envoyer un message</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -623,122 +638,142 @@ const styles = {
     display: "flex",
     height: "100vh",
     fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+    backgroundColor: "#fafafa",
   },
   sidebar: {
-    width: 300,
+    width: "350px",
     borderRight: "1px solid #e0e0e0",
-    overflowY: "auto",
-    backgroundColor: "#f5f5f5",
+    backgroundColor: "#ffffff",
+    display: "flex",
+    flexDirection: "column",
   },
   sidebarHeader: {
+    padding: "20px",
+    borderBottom: "1px solid #e0e0e0",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "15px",
-    borderBottom: "1px solid #e0e0e0",
-    position: "sticky",
-    top: 0,
     backgroundColor: "#f5f5f5",
-    zIndex: 1,
   },
   sidebarTitle: {
     margin: 0,
     fontSize: "18px",
-    fontWeight: "500",
+    fontWeight: "600",
     color: "#333",
   },
   loadingIndicator: {
     fontSize: "12px",
     color: "#666",
   },
+  conversationList: {
+    flex: 1,
+    overflowY: "auto",
+  },
   conversationItem: {
     display: "flex",
     alignItems: "center",
     padding: "12px 15px",
     cursor: "pointer",
-    transition: "background-color 0.2s",
-    borderBottom: "1px solid #e0e0e0",
-    ':hover': {
-      backgroundColor: "#eeeeee",
-    },
+    transition: "all 0.2s ease",
+    borderBottom: "1px solid #f0f0f0",
   },
   conversationAvatar: {
-    width: 45,
-    height: 45,
+    width: "48px",
+    height: "48px",
     borderRadius: "50%",
     marginRight: "12px",
     objectFit: "cover",
-    border: "1px solid #ddd",
+    border: "2px solid #e0e0e0",
   },
   conversationContent: {
     flex: 1,
     minWidth: 0,
   },
+  conversationHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "4px",
+  },
   conversationName: {
     fontSize: "14px",
-    marginBottom: "3px",
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
+    maxWidth: "70%",
+  },
+  conversationTime: {
+    fontSize: "11px",
+    color: "#757575",
+  },
+  conversationPreview: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  conversationLastMessage: {
+    fontSize: "13px",
+    color: "#616161",
+    margin: 0,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    maxWidth: "80%",
   },
   unreadBadge: {
-    backgroundColor: "#007bff",
+    backgroundColor: "#2196f3",
     color: "white",
     borderRadius: "50%",
-    width: "20px",
+    minWidth: "20px",
     height: "20px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "12px",
-  },
-  conversationLastMessage: {
-    fontSize: "13px",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  conversationTime: {
     fontSize: "11px",
-    color: "#9e9e9e",
-    marginTop: "3px",
+    fontWeight: "bold",
   },
   chatArea: {
     flex: 1,
     display: "flex",
     flexDirection: "column",
-    backgroundColor: "#fafafa",
+    backgroundColor: "#f5f5f5",
   },
   chatHeader: {
     display: "flex",
     alignItems: "center",
     padding: "15px 20px",
-    borderBottom: "1px solid #e0e0e0",
     backgroundColor: "#ffffff",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+    borderBottom: "1px solid #e0e0e0",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
   },
   chatAvatar: {
-    width: 50,
-    height: 50,
+    width: "48px",
+    height: "48px",
     borderRadius: "50%",
     marginRight: "15px",
     objectFit: "cover",
-    border: "1px solid #ddd",
+    border: "1px solid #e0e0e0",
   },
   chatTitle: {
     margin: 0,
-    fontSize: "18px",
+    fontSize: "16px",
     fontWeight: "500",
+  },
+  chatStatus: {
+    margin: 0,
+    fontSize: "13px",
+    color: "#757575",
   },
   messagesContainer: {
     flex: 1,
     padding: "20px",
     overflowY: "auto",
-    background: "#e5ddd5 url('https://web.whatsapp.com/img/bg-chat-tile-light_a4be512e7195b6b733d9110b408f075d.png')",
+    background: "#e5ddd5",
+    backgroundImage: "url('https://web.whatsapp.com/img/bg-chat-tile-light_a4be512e7195b6b733d9110b408f075d.png')",
   },
   messageWrapper: {
     display: "flex",
-    marginBottom: "5px",
+    marginBottom: "2px",
     width: "100%",
   },
   messageContainer: {
@@ -748,42 +783,125 @@ const styles = {
   },
   messageDate: {
     alignSelf: "center",
-    backgroundColor: "#e5ddd5",
-    padding: "5px 10px",
-    borderRadius: "15px",
-    fontSize: "12px",
-    color: "#666",
+    backgroundColor: "rgba(225,245,254,0.92)",
+    padding: "5px 12px",
+    borderRadius: "7.5px",
+    fontSize: "12.5px",
+    color: "#0d4b7a",
     margin: "10px 0",
+    fontWeight: "500",
+    boxShadow: "0 1px 0.5px rgba(0,0,0,0.13)",
   },
   messageBubble: {
     maxWidth: "70%",
-    padding: "10px 15px",
-    borderRadius: "18px",
-    boxShadow: "0 1px 1px rgba(0,0,0,0.1)",
+    padding: "10px 12px 10px 8px",
+    borderRadius: "7.5px",
+    position: "relative",
+    marginBottom: "2px",
+    boxShadow: "0 1px 0.5px rgba(0,0,0,0.13)",
+  },
+  messageContent: {
     display: "flex",
     flexDirection: "column",
   },
   messageText: {
-    fontSize: "15px",
+    fontSize: "14.2px",
+    lineHeight: "1.4",
     wordBreak: "break-word",
+    marginRight: "40px",
+    marginBottom: "7px",
   },
-  messageFooter: {
+  messageMeta: {
     display: "flex",
-    justifyContent: "flex-end",
     alignItems: "center",
-    marginTop: "5px",
+    justifyContent: "flex-end",
+    float: "right",
+    margin: "-10px -5px -5px 5px",
+    position: "relative",
+    height: "15px",
   },
   messageTime: {
     fontSize: "11px",
-    color: "#666",
-    marginRight: "5px",
+    color: "rgba(0,0,0,0.45)",
+    marginRight: "3px",
+    letterSpacing: "-0.3px",
+    transform: "translateY(1px)",
   },
   messageStatus: {
+    fontSize: "13px",
+    marginLeft: "3px",
+    letterSpacing: "-1px",
+    transform: "translateY(-0.1px)",
+  },
+  editedLabel: {
+    fontSize: "11px",
+    color: "rgba(0,0,0,0.45)",
+    marginLeft: "4px",
+    fontStyle: "italic",
+  },
+  messageMenu: {
+    position: "absolute",
+    right: 0,
+    top: "100%",
+    backgroundColor: "white",
+    borderRadius: "8px",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+    zIndex: 10,
+    minWidth: "150px",
+    overflow: "hidden",
+    marginTop: "5px",
+  },
+  menuItem: {
+    display: "flex",
+    alignItems: "center",
+    width: "100%",
+    padding: "8px 12px",
+    border: "none",
+    backgroundColor: "transparent",
+    cursor: "pointer",
     fontSize: "14px",
+    textAlign: "left",
+  },
+  menuIcon: {
+    marginRight: "8px",
+    fontSize: "16px",
+  },
+  editInput: {
+    padding: "10px",
+    borderRadius: "8px",
+    border: "1px solid #e0e0e0",
+    width: "90%",
+    fontSize: "15px",
+    marginBottom: "5px",
+    outline: "none",
+  },
+  editButtons: {
+    display: "flex",
+    gap: "5px",
+    justifyContent: "flex-end",
+  },
+  saveEditButton: {
+    padding: "6px 12px",
+    backgroundColor: "#4caf50",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "14px",
+    transition: "background-color 0.2s",
+  },
+  cancelEditButton: {
+    padding: "6px 12px",
+    backgroundColor: "#f44336",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "14px",
+    transition: "background-color 0.2s",
   },
   messageInputContainer: {
     display: "flex",
-    gap: "10px",
     padding: "15px",
     backgroundColor: "#ffffff",
     borderTop: "1px solid #e0e0e0",
@@ -791,27 +909,31 @@ const styles = {
   messageInput: {
     flex: 1,
     padding: "12px 15px",
-    borderRadius: "20px",
-    border: "1px solid #ddd",
+    borderRadius: "24px",
+    border: "1px solid #e0e0e0",
     outline: "none",
     fontSize: "15px",
-    ':focus': {
-      borderColor: "#007bff",
-    },
   },
   sendButton: {
-    backgroundColor: "#007bff",
-    color: "#fff",
+    backgroundColor: "#2196f3",
+    color: "white",
     border: "none",
     padding: "0 20px",
-    borderRadius: "20px",
+    borderRadius: "24px",
     cursor: "pointer",
     fontSize: "15px",
+    fontWeight: "500",
+    marginLeft: "10px",
     transition: "background-color 0.2s",
-    ':hover': {
-      backgroundColor: "#0069d9",
-    },
   },
+  noRecipientMessage: {
+    padding: "20px",
+    textAlign: "center",
+    color: "#666",
+    fontStyle: "italic",
+    backgroundColor: "#fff",
+    borderTop: "1px solid #e0e0e0"
+  }
 };
 
 export default ChatPage;

@@ -48,7 +48,7 @@ function App() {
           <Route path="/profile/create" element={<StudentProfileCreate />} />
         <Route path="/profile/edit/:id" element={<StudentProfileEdit />} />
         <Route path="/profile/view" element={<StudentProfileView />} />
-        <Route path="/search" element={<SearchProfiles />} />
+        <Route path="/search" element={ <MainLayout><SearchProfiles /></MainLayout>} />
         <Route path="/profilestudent/:userId" element={<NvprofileStudent />} />
         <Route path="/profilecompany/:userId" element={<NvprofileCompany />} />
         <Route path="/ChatPage" element={<ChatPage/>} />
