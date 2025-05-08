@@ -24,7 +24,7 @@ public class MessageRestController {
     @Autowired
     private MessageRepository messageRepository;
     @Autowired
-     private UserRepository userRepository;
+    private UserRepository userRepository;
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
     @PostMapping
@@ -40,8 +40,12 @@ public class MessageRestController {
     public List<Message> getConversation(@RequestParam Integer user1,
                                          @RequestParam Integer user2) {
         return messageRepository.findBySenderIdAndReceiverIdOrReceiverIdAndSenderIdOrderByTimestamp(
-                user1, user2, user1, user2);
+                        user1, user2, user1, user2
+                ).stream()
+                .filter(m -> !m.isCompletelyDeleted())
+                .toList();
     }
+
 
     @GetMapping("/unread")
     public List<Message> getUnreadMessages(@RequestParam Integer receiverId) {
@@ -130,8 +134,7 @@ public class MessageRestController {
                         + "&role=" + otherUser.getRole().name();
 
                 boolean isRead = !message.getSenderId().equals(userId) && message.isRead();
-
-                int unreadCount = messageRepository.countUnreadMessages(otherUser.getId(), userId); // ✅
+                int unreadCount = messageRepository.countUnreadMessages(otherUser.getId(), userId);
 
                 result.add(new ConversationDTO(
                         otherUser.getId(),
@@ -142,7 +145,7 @@ public class MessageRestController {
                         message.getContent(),
                         message.getTimestamp(),
                         isRead,
-                        unreadCount // ✅
+                        unreadCount
                 ));
             }
         }
@@ -150,14 +153,15 @@ public class MessageRestController {
         return result;
     }
 
-// hamouda
-@DeleteMapping("/{messageId}")
-public void deleteMessage(@PathVariable Long messageId) {
-    Message message = messageRepository.findById(messageId)
-            .orElseThrow(() -> new RuntimeException("Message not found"));
-    message.setCompletelyDeleted(true); // Marque le message comme supprimé
-    messageRepository.save(message); // Sauvegarde en base
-}                                                                   @PutMapping("/{messageId}/edit/{userId}")
+
+    // hamouda
+    @DeleteMapping("/{messageId}")
+    public void deleteMessage(@PathVariable Long messageId) {
+        Message message = messageRepository.findById(messageId)
+                .orElseThrow(() -> new RuntimeException("Message not found"));
+        message.setCompletelyDeleted(true); // Marque le message comme supprimé
+        messageRepository.save(message); // Sauvegarde en base
+    }                                                                   @PutMapping("/{messageId}/edit/{userId}")
     public Message editMessage(@PathVariable Long messageId,
                                @PathVariable Integer userId,
                                @RequestBody String newContent) {

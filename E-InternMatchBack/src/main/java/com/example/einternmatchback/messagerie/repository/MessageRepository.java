@@ -16,29 +16,33 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     );
 
     List<Message> findByReceiverIdAndReadFalse(Integer receiverId);
+
     @Query("""
-SELECT m FROM Message m
-WHERE m.id IN (
-    SELECT MAX(m2.id) FROM Message m2
-    WHERE m2.senderId = :userId OR m2.receiverId = :userId
-    GROUP BY 
-        CASE 
-            WHEN m2.senderId = :userId THEN m2.receiverId 
-            ELSE m2.senderId 
-        END
-)
-ORDER BY m.timestamp DESC
-""")
+        SELECT m FROM Message m
+        WHERE m.completelyDeleted = false AND m.id IN (
+            SELECT MAX(m2.id) FROM Message m2
+            WHERE m2.completelyDeleted = false AND (m2.senderId = :userId OR m2.receiverId = :userId)
+            GROUP BY 
+                CASE 
+                    WHEN m2.senderId = :userId THEN m2.receiverId 
+                    ELSE m2.senderId 
+                END
+        )
+        ORDER BY m.timestamp DESC
+    """)
     List<Message> findLatestMessagesByUser(@Param("userId") Integer userId);
-    @Query("SELECT COUNT(m) FROM Message m WHERE m.senderId = :senderId AND m.receiverId = :receiverId AND m.read = false")
+
+    @Query("SELECT COUNT(m) FROM Message m WHERE m.senderId = :senderId AND m.receiverId = :receiverId AND m.read = false AND m.completelyDeleted = false")
     int countUnreadMessages(@Param("senderId") Integer senderId, @Param("receiverId") Integer receiverId);
-// hamouda
-@Modifying
-@Transactional
-@Query("UPDATE Message m SET m.completelyDeleted = true WHERE m.id = :messageId")
-void markAsCompletelyDeleted(@Param("messageId") Long messageId);                                       @Modifying
+
+    @Modifying
     @Transactional
-    @Query("UPDATE Message m SET m.content = :content, m.edited = true WHERE m.id = :messageId AND m.senderId = :userId")
+    @Query("UPDATE Message m SET m.completelyDeleted = true WHERE m.id = :messageId")
+    void markAsCompletelyDeleted(@Param("messageId") Long messageId);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Message m SET m.content = :content, m.edited = true WHERE m.id = :messageId AND m.senderId = :userId AND m.completelyDeleted = false")
     void updateMessageContent(@Param("messageId") Long messageId,
                               @Param("userId") Integer userId,
                               @Param("content") String content);

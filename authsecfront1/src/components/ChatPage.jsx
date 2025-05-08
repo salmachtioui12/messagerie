@@ -192,6 +192,33 @@ const ChatPage = () => {
         conv.userId === otherUserId
       );
 
+      // Si le message est complètement supprimé
+      if (updatedMessage.completelyDeleted) {
+        // Si c'est le dernier message d'une conversation
+        const updatedConversations = prev.map(conv => {
+          if (conv.lastMessageId === updatedMessage.id) {
+            // Trouver le nouveau dernier message
+            const conversationMessages = messages.filter(m => 
+              ((m.senderId === userId && m.receiverId === otherUserId) ||
+               (m.senderId === otherUserId && m.receiverId === userId)) &&
+              shouldDisplayMessage(m)
+            );
+            
+            const lastMsg = conversationMessages[conversationMessages.length - 1];
+            
+            return {
+              ...conv,
+              lastMessage: lastMsg?.content || "Message supprimé",
+              lastMessageId: lastMsg?.id,
+              timestamp: lastMsg?.timestamp || conv.timestamp
+            };
+          }
+          return conv;
+        });
+        
+        return updatedConversations.filter(shouldDisplayConversation);
+      }
+
       if (existingConvIndex >= 0) {
         const updatedConversations = prev.map(conv => {
           if (conv.userId === otherUserId) {
@@ -200,9 +227,13 @@ const ChatPage = () => {
             return {
               ...conv,
               lastMessage: updatedMessage.content,
+              lastMessageId: updatedMessage.id,
               timestamp: updatedMessage.timestamp,
               unreadCount: isUnreadUpdate ? conv.unreadCount + 1 : conv.unreadCount,
-              read: updatedMessage.senderId === userId
+              read: updatedMessage.senderId === userId,
+              deletedBySender: updatedMessage.deletedBySender,
+              deletedByReceiver: updatedMessage.deletedByReceiver,
+              completelyDeleted: updatedMessage.completelyDeleted
             };
           }
           return conv;
@@ -220,9 +251,15 @@ const ChatPage = () => {
           firstname: receiverInfo?.firstname || "Nouvel utilisateur",
           lastname: receiverInfo?.lastname || "",
           lastMessage: updatedMessage.content,
+          lastMessageId: updatedMessage.id,
           timestamp: updatedMessage.timestamp,
           unreadCount: updatedMessage.receiverId === userId && !updatedMessage.read ? 1 : 0,
-          read: updatedMessage.senderId === userId
+          read: updatedMessage.senderId === userId,
+          deletedBySender: updatedMessage.deletedBySender,
+          deletedByReceiver: updatedMessage.deletedByReceiver,
+          completelyDeleted: updatedMessage.completelyDeleted,
+          senderId: updatedMessage.senderId,
+          receiverId: updatedMessage.receiverId
         };
 
         const updatedConversations = [...prev, newConv].sort((a, b) => {
@@ -234,7 +271,7 @@ const ChatPage = () => {
         return updatedConversations;
       }
     });
-  }, [userId, receiverRole, receiverInfo]);
+  }, [userId, receiverRole, receiverInfo, messages]);
 
   useEffect(() => {
     if (userId && receiverId) {
@@ -291,6 +328,7 @@ const ChatPage = () => {
           });
 
           syncConversationState(updatedMessage);
+          fetchConversations(); // Force le rafraîchissement des conversations
         });
       },
       onStompError: (frame) => {
@@ -304,7 +342,7 @@ const ChatPage = () => {
     return () => {
       if (stompClientRef.current) stompClientRef.current.deactivate();
     };
-  }, [userId, receiverId, token, markMessageAsRead, syncConversationState]);
+  }, [userId, receiverId, token, markMessageAsRead, syncConversationState, fetchConversations]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -313,27 +351,31 @@ const ChatPage = () => {
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !userId || !receiverId) return;
 
-    const message = {
-      senderId: userId,
-      receiverId: parseInt(receiverId),
-      content: newMessage,
-      timestamp: new Date().toISOString(),
-      read: false
-    };
-
     try {
+      const res = await axios.post(
+        `http://localhost:1217/api/messages`,
+        {
+          senderId: userId,
+          receiverId: parseInt(receiverId),
+          content: newMessage
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const sentMessage = res.data;
+
       if (stompClientRef.current?.connected) {
         stompClientRef.current.publish({
           destination: `/app/chat/${receiverId}`,
-          body: JSON.stringify(message),
+          body: JSON.stringify(sentMessage),
         });
       }
 
-      setMessages((prev) => [...prev, message]);
+      setMessages((prev) => [...prev, sentMessage]);
       setNewMessage("");
       
       const conversationUpdate = {
-        ...message,
+        ...sentMessage,
         firstname: receiverInfo?.firstname || "Nouvel utilisateur",
         lastname: receiverInfo?.lastname || "",
         role: receiverRole
@@ -348,6 +390,41 @@ const ChatPage = () => {
   const handleDeleteMessage = async (messageId) => {
     try {
       setIsProcessing(true);
+      
+      // Mise à jour optimiste des messages
+      setMessages(prevMessages => 
+        prevMessages.filter(msg => msg.id !== messageId)
+      );
+      
+      // Mise à jour optimiste des conversations
+      setConversations(prevConversations => {
+        const updatedConversations = prevConversations.map(conv => {
+          // Si le dernier message de la conversation est celui qu'on supprime
+          if (conv.lastMessageId === messageId) {
+            // Trouver le nouveau dernier message non supprimé
+            const remainingMessages = messages.filter(m => 
+              m.id !== messageId && 
+              ((m.senderId === userId && m.receiverId === conv.userId) ||
+               (m.senderId === conv.userId && m.receiverId === userId)) &&
+              shouldDisplayMessage(m)
+            );
+            
+            const lastMessage = remainingMessages[remainingMessages.length - 1];
+            
+            return {
+              ...conv,
+              lastMessage: lastMessage?.content || "Message supprimé",
+              lastMessageId: lastMessage?.id,
+              timestamp: lastMessage?.timestamp || conv.timestamp
+            };
+          }
+          return conv;
+        });
+        
+        return updatedConversations.filter(shouldDisplayConversation);
+      });
+      
+      // Envoyer la requête de suppression au serveur
       if (stompClientRef.current?.connected) {
         stompClientRef.current.publish({
           destination: `/app/chat/${messageId}/delete/${userId}`,
@@ -355,9 +432,11 @@ const ChatPage = () => {
         });
       }
       
-      setMessages(prevMessages => 
-        prevMessages.filter(msg => msg.id !== messageId)
-      );
+      // Rafraîchir les conversations après un court délai
+      setTimeout(() => {
+        fetchConversations();
+      }, 300);
+      
     } catch (err) {
       console.error("Erreur lors de la suppression du message", err);
     } finally {
@@ -405,6 +484,21 @@ const ChatPage = () => {
     }
   };
 
+  const shouldDisplayConversation = (conv) => {
+    if (conv.completelyDeleted) return false;
+    
+    // Si la conversation n'a pas de dernier message valide
+    if (!conv.lastMessage || conv.lastMessage === "Message supprimé") {
+      return false;
+    }
+    
+    if (conv.senderId === userId && conv.deletedBySender) return false;
+    
+    if (conv.receiverId === userId && conv.deletedByReceiver) return false;
+    
+    return true;
+  };
+
   const handleMessageClick = (messageId, event) => {
     event.stopPropagation();
     setSelectedMessageId(selectedMessageId === messageId ? null : messageId);
@@ -418,70 +512,68 @@ const ChatPage = () => {
           {loadingConversations && <div style={styles.loadingIndicator}>Chargement...</div>}
         </div>
         <div style={styles.conversationList}>
-          {conversations.map((conv) => {
-            const isActive = parseInt(receiverId) === conv.userId;
-            const hasUnread = conv.unreadCount > 0;
-            const conversationTime = formatDisplayTime(new Date(conv.timestamp));
-            
-            return (
-              <div
-                key={conv.userId}
-                onClick={() => navigate(`/ChatPage?receiverId=${conv.userId}&role=${conv.role}`)}
-                style={{
-                  ...styles.conversationItem,
-                  backgroundColor: isActive 
-                    ? "#e3f2fd"
-                    : hasUnread 
-                      ? "#f5f5f5"
-                      : "#ffffff",
-                }}
-              >
-                <img
-                  src={conversationImages[conv.userId] || DEFAULT_PROFILE_PICTURE}
-                  alt="Profile"
-                  style={styles.conversationAvatar}
-                />
-                <div style={styles.conversationContent}>
-                  <div style={styles.conversationHeader}>
-                    <strong style={{
-                      ...styles.conversationName,
-                      fontWeight: hasUnread ? "600" : "500",
-                      color: hasUnread ? "#000000" : "#333333"
-                    }}>
-                      {conv.firstname} {conv.lastname}
-                    </strong>
-                    <span style={styles.conversationTime}>
-                      {conversationTime}
-                    </span>
-                  </div>
-                  <div style={styles.conversationPreview}>
-                    <p style={{
-                      ...styles.conversationLastMessage,
-                      fontWeight: hasUnread ? "500" : "400"
-                    }}>
-                      {conv.lastMessage?.length > 25 
-                        ? `${conv.lastMessage.substring(0, 25)}...` 
-                        : conv.lastMessage}
-                    </p>
-                    {hasUnread && (
-                      <span style={styles.unreadBadge}>
-                        {conv.unreadCount}
+          {conversations
+            .filter(shouldDisplayConversation)
+            .map((conv) => {
+              const isActive = parseInt(receiverId) === conv.userId;
+              const hasUnread = conv.unreadCount > 0;
+              const conversationTime = formatDisplayTime(new Date(conv.timestamp));
+              
+              return (
+                <div
+                  key={conv.userId}
+                  onClick={() => navigate(`/ChatPage?receiverId=${conv.userId}&role=${conv.role}`)}
+                  style={{
+                    ...styles.conversationItem,
+                    backgroundColor: isActive 
+                      ? "#e3f2fd"
+                      : hasUnread 
+                        ? "#f5f5f5"
+                        : "#ffffff",
+                  }}
+                >
+                  <img
+                    src={conversationImages[conv.userId] || DEFAULT_PROFILE_PICTURE}
+                    alt="Profile"
+                    style={styles.conversationAvatar}
+                  />
+                  <div style={styles.conversationContent}>
+                    <div style={styles.conversationHeader}>
+                      <strong style={{
+                        ...styles.conversationName,
+                        fontWeight: hasUnread ? "600" : "500",
+                        color: hasUnread ? "#000000" : "#333333"
+                      }}>
+                        {conv.firstname} {conv.lastname}
+                      </strong>
+                      <span style={styles.conversationTime}>
+                        {conversationTime}
                       </span>
-                    )}
+                    </div>
+                    <div style={styles.conversationPreview}>
+                      <p style={{
+                        ...styles.conversationLastMessage,
+                        fontWeight: hasUnread ? "500" : "400"
+                      }}>
+                        {conv.lastMessage?.length > 25 
+                          ? `${conv.lastMessage.substring(0, 25)}...` 
+                          : conv.lastMessage}
+                      </p>
+                      {hasUnread && (
+                        <span style={styles.unreadBadge}>
+                          {conv.unreadCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       </div>
 
       <div style={styles.chatArea}>
-        {receiverInfo && (
-          <div >
-          
-          </div>
-        )}
+       
 
         <div style={styles.messagesContainer}>
           {messages
@@ -494,7 +586,7 @@ const ChatPage = () => {
               const prevDisplayDate = prevMessageDate ? formatDisplayDate(prevMessageDate) : null;
               
               return (
-                <div key={index} style={styles.messageWrapper}>
+                <div key={msg.id || index} style={styles.messageWrapper}>
                   <div style={{
                     ...styles.messageContainer,
                     alignItems: msg.senderId === userId ? "flex-end" : "flex-start",
@@ -526,14 +618,14 @@ const ChatPage = () => {
                             disabled={isProcessing}
                             style={styles.saveEditButton}
                           >
-                            {isProcessing ? "En cours..." : "✓"}
+                            {isProcessing ? "En cours..." : "Valider"}
                           </button>
                           <button 
                             onClick={cancelEditing}
                             disabled={isProcessing}
                             style={styles.cancelEditButton}
                           >
-                            X
+                            Annuler
                           </button>
                         </div>
                       </div>
@@ -568,7 +660,7 @@ const ChatPage = () => {
                           </div>
                         </div>
 
-                        {msg.senderId === userId && selectedMessageId === msg.id && (
+                        {msg.senderId === userId && msg.id && selectedMessageId === msg.id && (
                           <div ref={menuRef} style={styles.messageMenu}>
                             <button
                               onClick={(e) => {
@@ -603,7 +695,6 @@ const ChatPage = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Afficher seulement si receiverId et role sont présents */}
         {receiverId && rawRole ? (
           <div style={styles.messageInputContainer}>
             <input
